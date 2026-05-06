@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+saved_models/
+data/
+mlruns/
+.ipynb_checkpoints/
+*.xlsx
+*.csv
+venv/
+.env
