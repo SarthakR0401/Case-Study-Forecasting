@@ -1,3 +1,6 @@
+import cmdstanpy
+cmdstanpy.set_cmdstan_path('C:/Users/HP/.cmdstan/cmdstan-2.38.0')
+
 import os
 import pandas as pd
 import numpy as np
