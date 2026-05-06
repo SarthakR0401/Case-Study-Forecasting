@@ -1,27 +1,32 @@
-# Production-Ready Time Series Forecasting System (v2.0)
+# End-to-End Time Series Forecasting System (v2.0)
 
-A high-performance forecasting engine designed to predict 8 weeks of sales for multiple geographic regions. The system automatically evaluates statistical, additive, and deep learning models to select the most accurate forecaster per entity.
-
----
-
-## 🚀 Key Improvements in v2.0
-
-This version introduces significant architectural upgrades and critical bug fixes to ensure production stability:
-
-- **Recursive Forecasting Engine**: Machine learning models (XGBoost) now use a recursive inference loop, building future features (lags/rolling) dynamically from their own predictions.
-- **Ultra-Fast API Performance**: Implemented a **Lifespan Startup Cache** that pre-loads and pre-processes data once, reducing API response times to sub-milliseconds.
-- **Robust Data Resilience**: Enhanced column auto-detection and smarter missing value handling (linear interpolation + ffill/bfill) to handle real-world messy datasets.
-- **Confidence Intervals**: Full support for uncertainty bands in SARIMA and Prophet, providing business users with "Lower" and "Upper" sales bounds.
-- **Stability Fixes**: Corrected LSTM gradient instability (tanh activation + scaling) and Prophet daily seasonality overfitting.
+A production-ready forecasting service that trains four algorithms per US state, auto-selects the best performer, and serves 8-week sales predictions through a REST API with confidence intervals.
 
 ---
 
 ## 🛠️ Tech Stack
+- **Modeling**: SARIMA, Facebook Prophet, XGBoost, LSTM (TensorFlow)
+- **API Framework**: FastAPI (Uvicorn)
+- **Data Handling**: Pandas, NumPy, Scikit-learn
+- **Visualization**: Matplotlib & Plotly
 
-- **Core**: Python 3.11, Pandas, NumPy
-- **Modeling**: SARIMA (Statsmodels), Facebook Prophet, XGBoost, LSTM (TensorFlow)
-- **API**: FastAPI (Uvicorn)
-- **Visualization**: Matplotlib, Plotly (Interactive)
+---
+
+## 🚀 What's New in v2.0 (Bug Fixes & Improvements)
+
+| File | Fix / Improvement Applied |
+|---|---|
+| `preprocessing.py` | Linear interpolation + ffill/bfill for robust time-series continuity |
+| `preprocessing.py` | Robust column auto-detection (handles state/region, sales/revenue, etc.) |
+| `features.py` | Automated US Federal Holiday detection via `holidays` library |
+| `features.py` | Integrated 30-day rolling windows into machine learning features |
+| `prophet_model.py` | Multiplicative seasonality mode + Confidence Interval support |
+| `xgboost_model.py` | **Recursive Inference Engine**: Dynamically builds lags for future steps |
+| `lstm_model.py` | Normalization via `MinMaxScaler` + `tanh` stability fixes |
+| `evaluate.py` | NaN-safe sMAPE implementation (handles zero-sales days) |
+| `main.py` | **Lifespan Startup Cache**: Pre-loads data for sub-millisecond response |
+| `main.py` | Confidence intervals returned in API for all models |
+| `plot_results.py` | Date-aware x-axis + shaded 95% Confidence Interval bands |
 
 ---
 
@@ -29,60 +34,39 @@ This version introduces significant architectural upgrades and critical bug fixe
 
 ```
 forecasting_system/
-├── api/                # FastAPI logic, lifespan cache, and Pydantic schemas
-├── models/             # Logic for all 4 forecasting algorithms (v2.0 recursive engines)
-├── utils/              # Data cleaning, feature engineering (lags, holidays), and metrics
-├── data/               # Source Excel datasets
-├── saved_models/       # Persisted "Best-in-Class" model artifacts and metrics reports
-├── train.py            # Automated training & per-state model selection pipeline
-├── plot_results.py     # Multi-state visualization dashboard with CI bands
-└── generate_docs.py    # Formal documentation (.docx) generator
+├── train.py            # Automated training pipeline & model selection
+├── plot_results.py     # Visualization client (matplotlib + Plotly)
+├── api/                # FastAPI application, lifespan cache, and schemas
+├── models/             # Implementations for SARIMA, Prophet, XGBoost, and LSTM
+├── utils/              # Preprocessing, feature engineering, and evaluation
+├── data/               # Source Excel dataset
+└── saved_models/       # Model artifacts and metrics_report.csv
 ```
 
 ---
 
-## 🧠 Intelligence & Feature Engineering
-
-The system extracts deep temporal patterns using:
-1. **Lags**: (t-1, t-7, t-30) to capture daily, weekly, and monthly dependencies.
-2. **Rolling Stats**: 7-day and 30-day moving averages and volatility (std).
-3. **External Context**: Automated US Federal Holiday detection via `holidays` library.
-4. **Calendar Flags**: Day-of-week, month, and weekend indicators.
-
----
-
-## 🏃 Getting Started
+## 🏃 How to Run
 
 ### 1. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Run Training & Selection
+### 2. Run Training Pipeline
 ```bash
 python train.py
 ```
-*This will evaluate all models per state and export a `metrics_report.csv` in `saved_models/`.*
 
-### 3. Launch the Prediction API
+### 3. Start the API
 ```bash
 uvicorn api.main:app --reload
 ```
-View interactive Swagger docs at: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+View interactive documentation at: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 ---
 
-## 📊 Evaluation Metrics
-Models are compared using a strict **Time-Series Hold-out Validation** (last 56 days) on:
-- **RMSE** (Primary Selection Metric)
+## 📊 Evaluation
+Models are compared on the **last 56 days** using:
+- **RMSE** (Primary selection metric)
 - **MAE** & **MAPE**
-- **sMAPE** (NaN-safe implementation)
-
----
-
-## 📄 Documentation
-A formal technical document explaining the methodology and insights can be generated locally:
-```bash
-python generate_docs.py
-```
-This produces `Forecasting_System_Documentation.docx`.
+- **sMAPE** (Symmetric Mean Absolute Percentage Error)
