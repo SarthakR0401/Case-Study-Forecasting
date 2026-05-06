@@ -7,27 +7,47 @@ import pandas as pd
 from datetime import timedelta
 import os
 import numpy as np
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="Production Forecasting System API")
-
-# Global state to avoid slow I/O on every request
+# Global cache
 DATA_CACHE = {}
 
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """Load data into memory once at startup."""
     print("Pre-loading data for API...")
-    if os.path.exists('data/Forecasting Case- Study.xlsx'):
-        df = load_and_preprocess('data/Forecasting Case- Study.xlsx')
+    path = 'data/Forecasting Case- Study.xlsx'
+    if os.path.exists(path):
+        df = load_and_preprocess(path)
         df = handle_missing_dates(df)
         df = create_features(df)
         DATA_CACHE['full_df'] = df
+        
+        # Pre-load metrics if available
+        if os.path.exists('saved_models/metrics_report.csv'):
+            DATA_CACHE['metrics'] = pd.read_csv('saved_models/metrics_report.csv').to_dict('records')
     else:
         print("Warning: Data file not found at startup.")
+    yield
+    DATA_CACHE.clear()
+
+app = FastAPI(title="Production Forecasting System API (v2.0)", lifespan=lifespan)
 
 @app.get("/")
 def health_check():
-    return {"status": "healthy", "service": "forecasting-system"}
+    return {"status": "healthy", "version": "2.0"}
+
+@app.get("/states")
+def list_states():
+    """Returns all states available in the dataset."""
+    if 'full_df' not in DATA_CACHE:
+        raise HTTPException(status_code=500, detail="Data not loaded.")
+    return sorted(DATA_CACHE['full_df']['state'].unique().tolist())
+
+@app.get("/metrics")
+def get_metrics():
+    """Returns training performance report."""
+    return DATA_CACHE.get('metrics', {"error": "Metrics report not found."})
 
 @app.post("/predict", response_model=ForecastResponse)
 def predict(request: ForecastRequest):
@@ -44,39 +64,32 @@ def predict(request: ForecastRequest):
     last_date = state_df['date'].max()
     forecast_dates = [(last_date + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(1, 57)]
     
+    lower, upper = None, None
+    
     try:
         if model_name == 'prophet':
-            preds = model.predict(periods=56)
+            preds, lower, upper = model.predict(periods=56, return_conf_int=True)
         elif model_name == 'sarima':
-            preds = model.predict(steps=56)
+            preds, lower, upper = model.predict(steps=56, return_conf_int=True)
         elif model_name == 'xgboost':
-            # XGBoost Recursive Forecast
-            X_cols = [
-                'day_of_week', 'month', 'is_weekend', 'is_holiday',
-                'lag_1', 'lag_7', 'lag_30', 
-                'rolling_mean_7', 'rolling_std_7', 
-                'rolling_mean_30', 'rolling_std_30'
-            ]
-            
-            # Simple recursive: we'll use the last known features as a baseline
-            # In a full prod version, we would recompute lags step-by-step
-            last_features = state_df[X_cols].tail(1)
-            preds = []
-            for _ in range(56):
-                p = model.predict(last_features)[0]
-                preds.append(p)
-                # Update features slightly for the next step (very simplified)
-                last_features['lag_1'] = p 
+            preds = model.predict(steps=56)
+            # XGBoost doesn't natively give CI, we'll simulate a 5% band for visualization
+            lower = preds * 0.95
+            upper = preds * 1.05
         elif model_name == 'lstm':
             preds = model.predict(state_df['sales'].values, steps=56)
+            lower = preds * 0.90
+            upper = preds * 1.10
         else:
-            preds = [0.0] * 56
+            preds = np.zeros(56)
             
         return {
             "state": state,
             "model_used": model_name,
             "forecast": [float(p) for p in preds],
             "dates": forecast_dates,
+            "lower": [float(l) for l in lower] if lower is not None else None,
+            "upper": [float(u) for u in upper] if upper is not None else None,
             "history": state_df['sales'].tail(30).tolist(),
             "history_dates": [d.strftime('%Y-%m-%d') for d in state_df['date'].tail(30)]
         }

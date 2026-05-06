@@ -1,5 +1,6 @@
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 import pandas as pd
+import numpy as np
 
 class SarimaForecaster:
     def __init__(self, order=(1, 1, 1), seasonal_order=(1, 1, 1, 7)):
@@ -12,7 +13,15 @@ class SarimaForecaster:
         self.model_fit = model.fit(disp=False)
         return self
 
-    def predict(self, steps=56):
+    def predict(self, steps=56, return_conf_int=False):
         if self.model_fit:
-            return self.model_fit.forecast(steps=steps)
+            forecast_obj = self.model_fit.get_forecast(steps=steps)
+            preds = forecast_obj.predicted_mean
+            if return_conf_int:
+                conf_df = forecast_obj.conf_int()
+                # Handle potential column name variations in statsmodels versions
+                lower = conf_df.iloc[:, 0].values
+                upper = conf_df.iloc[:, 1].values
+                return preds.values, lower, upper
+            return preds.values
         return None

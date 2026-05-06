@@ -25,12 +25,11 @@ def train_and_select_best():
     
     # 2. Feature Engineering
     df = create_features(df)
-    
-    # Ensure data is sorted to prevent leakage in lags
     df = df.sort_values(['state', 'date'])
     
     states = df['state'].unique()
     best_models = {}
+    metrics_list = []
 
     # Define features to use for ML models
     X_cols = [
@@ -47,60 +46,66 @@ def train_and_select_best():
         # Time-series split: use last 8 weeks as validation
         train_df = state_df.iloc[:-FORECAST_HORIZON]
         val_df = state_df.iloc[-FORECAST_HORIZON:]
-        
         y_val = val_df['sales'].values
+        
         results = {}
 
         # --- SARIMA ---
         try:
             sarima = SarimaForecaster().train(train_df['sales'])
             pred = sarima.predict(steps=FORECAST_HORIZON)
-            results['sarima'] = (sarima, evaluate_forecast(y_val, pred)['rmse'])
-        except Exception as e:
-            print(f"SARIMA failed for {state}: {e}")
+            m = evaluate_forecast(y_val, pred)
+            results['sarima'] = (sarima, m['rmse'])
+            metrics_list.append({'state': state, 'model': 'sarima', **m})
+        except Exception as e: print(f"SARIMA error: {e}")
 
         # --- Prophet ---
         try:
             p_train = train_df[['date', 'sales']].rename(columns={'date': 'ds', 'sales': 'y'})
             prophet = ProphetForecaster().train(p_train)
             pred = prophet.predict(periods=FORECAST_HORIZON)
-            results['prophet'] = (prophet, evaluate_forecast(y_val, pred)['rmse'])
-        except Exception as e:
-            print(f"Prophet failed for {state}: {e}")
+            m = evaluate_forecast(y_val, pred)
+            results['prophet'] = (prophet, m['rmse'])
+            metrics_list.append({'state': state, 'model': 'prophet', **m})
+        except Exception as e: print(f"Prophet error: {e}")
 
         # --- XGBoost ---
         try:
-            # Drop initial rows where lags are NaN
             xgb_train = train_df.dropna(subset=X_cols)
             if not xgb_train.empty:
-                xgb_model = XGBoostForecaster().train(xgb_train[X_cols], xgb_train['sales'])
-                # During validation, we use val_df features (recursive is only for future)
+                # Pass tail_df for recursive forecasting later
+                xgb_model = XGBoostForecaster().train(xgb_train[X_cols], xgb_train['sales'], tail_df=train_df)
                 pred = xgb_model.predict(val_df[X_cols])
-                results['xgboost'] = (xgb_model, evaluate_forecast(y_val, pred)['rmse'])
-        except Exception as e:
-            print(f"XGBoost failed for {state}: {e}")
+                m = evaluate_forecast(y_val, pred)
+                results['xgboost'] = (xgb_model, m['rmse'])
+                metrics_list.append({'state': state, 'model': 'xgboost', **m})
+        except Exception as e: print(f"XGBoost error: {e}")
 
         # --- LSTM ---
         try:
             lstm = LSTMForecaster().train(train_df['sales'].values)
             pred = lstm.predict(train_df['sales'].values, steps=FORECAST_HORIZON)
-            results['lstm'] = (lstm, evaluate_forecast(y_val, pred)['rmse'])
-        except Exception as e:
-            print(f"LSTM failed for {state}: {e}")
+            m = evaluate_forecast(y_val, pred)
+            results['lstm'] = (lstm, m['rmse'])
+            metrics_list.append({'state': state, 'model': 'lstm', **m})
+        except Exception as e: print(f"LSTM error: {e}")
 
-        # Select best model for this state
+        # Select best model
         if results:
             best_model_name = min(results, key=lambda k: results[k][1])
             best_model_obj = results[best_model_name][0]
-            print(f"Winner for {state}: {best_model_name} (RMSE: {results[best_model_name][1]:.2f})")
+            print(f"  ✓ Winner for {state}: {best_model_name}")
             
-            # Save the best model
             joblib.dump(best_model_obj, os.path.join(MODEL_DIR, f"{state}_best_model.joblib"))
             best_models[state] = best_model_name
 
-    # Save mapping
+    # Save mapping and metrics
     joblib.dump(best_models, os.path.join(MODEL_DIR, "state_model_map.joblib"))
-    print("Training pipeline finished.")
+    metrics_df = pd.DataFrame(metrics_list)
+    metrics_df.to_csv(os.path.join(MODEL_DIR, "metrics_report.csv"), index=False)
+    
+    print("\nTraining pipeline finished.")
+    print(metrics_df.groupby('model')['state'].count().rename('states_won').to_string())
 
 if __name__ == "__main__":
     train_and_select_best()

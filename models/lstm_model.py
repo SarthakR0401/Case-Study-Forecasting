@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
+from tensorflow.keras.layers import LSTM, Dense, Dropout
 from sklearn.preprocessing import MinMaxScaler
 
 class LSTMForecaster:
@@ -17,7 +17,7 @@ class LSTMForecaster:
             y.append(series[i + self.window_size])
         return np.array(X), np.array(y)
 
-    def train(self, series, epochs=20, batch_size=32):
+    def train(self, series, epochs=30, batch_size=32):
         # Normalize data - critical for LSTM
         series = series.reshape(-1, 1)
         scaled_series = self.scaler.fit_transform(series).flatten()
@@ -25,8 +25,10 @@ class LSTMForecaster:
         X, y = self._prepare_data(scaled_series)
         X = X.reshape((X.shape[0], X.shape[1], 1))
         
+        # Bug fix: activation='tanh' (standard for LSTM gates) and Dropout
         self.model = Sequential([
-            LSTM(50, activation='relu', input_shape=(self.window_size, 1)),
+            LSTM(50, activation='tanh', input_shape=(self.window_size, 1), return_sequences=False),
+            Dropout(0.2),
             Dense(1)
         ])
         self.model.compile(optimizer='adam', loss='mse')
