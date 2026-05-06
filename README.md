@@ -78,11 +78,3 @@ Models are compared using a strict **Time-Series Hold-out Validation** (last 56 
 - **MAE** & **MAPE**
 - **sMAPE** (NaN-safe implementation)
 
----
-
-## 📄 Documentation
-A formal technical document explaining the methodology and insights can be generated locally:
-```bash
-python generate_docs.py
-```
-This produces `Forecasting_System_Documentation.docx`.
