@@ -9,6 +9,7 @@ from models.sarima_model import SarimaForecaster
 from models.prophet_model import ProphetForecaster
 from models.xgboost_model import XGBoostForecaster
 from models.lstm_model import LSTMForecaster
+from models.exponential_smoothing_model import ExponentialSmoothingForecaster
 
 DATA_PATH = 'data/Forecasting Case- Study.xlsx'
 MODEL_DIR = 'saved_models'
@@ -52,7 +53,12 @@ def train_and_select_best():
 
         # --- SARIMA ---
         try:
-            sarima = SarimaForecaster().train(train_df['sales'])
+            # Statsmodels needs a series with frequency for proper forecasting
+            train_series = train_df.set_index('date')['sales']
+            if train_series.index.freq is None:
+                train_series.index.freq = 'D'
+            
+            sarima = SarimaForecaster().train(train_series)
             pred = sarima.predict(steps=FORECAST_HORIZON)
             m = evaluate_forecast(y_val, pred)
             results['sarima'] = (sarima, m['rmse'])
@@ -67,7 +73,22 @@ def train_and_select_best():
             m = evaluate_forecast(y_val, pred)
             results['prophet'] = (prophet, m['rmse'])
             metrics_list.append({'state': state, 'model': 'prophet', **m})
-        except Exception as e: print(f"Prophet error: {e}")
+        except Exception: 
+            pass # Silent fail after our custom error message in prophet_model.py
+
+        # --- Exponential Smoothing (ETS) ---
+        try:
+            # ETS also benefits from proper index
+            train_series = train_df.set_index('date')['sales']
+            if train_series.index.freq is None:
+                train_series.index.freq = 'D'
+            
+            ets = ExponentialSmoothingForecaster().train(train_series)
+            pred = ets.predict(steps=FORECAST_HORIZON)
+            m = evaluate_forecast(y_val, pred)
+            results['ets'] = (ets, m['rmse'])
+            metrics_list.append({'state': state, 'model': 'ets', **m})
+        except Exception as e: print(f"ETS error: {e}")
 
         # --- XGBoost ---
         try:
@@ -94,7 +115,7 @@ def train_and_select_best():
         if results:
             best_model_name = min(results, key=lambda k: results[k][1])
             best_model_obj = results[best_model_name][0]
-            print(f"  ✓ Winner for {state}: {best_model_name}")
+            print(f"  [OK] Winner for {state}: {best_model_name}")
             
             joblib.dump(best_model_obj, os.path.join(MODEL_DIR, f"{state}_best_model.joblib"))
             best_models[state] = best_model_name

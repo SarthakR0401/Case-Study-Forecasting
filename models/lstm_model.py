@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 from sklearn.preprocessing import MinMaxScaler
 
 class LSTMForecaster:
@@ -27,7 +27,8 @@ class LSTMForecaster:
         
         # Bug fix: activation='tanh' (standard for LSTM gates) and Dropout
         self.model = Sequential([
-            LSTM(50, activation='tanh', input_shape=(self.window_size, 1), return_sequences=False),
+            Input(shape=(self.window_size, 1)),
+            LSTM(50, activation='tanh', return_sequences=False),
             Dropout(0.2),
             Dense(1)
         ])
